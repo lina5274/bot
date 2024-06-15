@@ -1,5 +1,5 @@
 import telebot
-from PIL import Image
+from PIL import Image, ImageOps
 import io
 from telebot import types
 
@@ -11,6 +11,30 @@ user_states = {}  # тут будем хранить информацию о д�
 # набор символов из которых составляем изображение
 ASCII_CHARS = '@%#*+=-:. '
 
+
+def mirror_image(image_stream, direction='horizontal'):
+    image = Image.open(image_stream)
+
+    if direction.lower() == 'horizontal':
+        mirrored_image = image.transpose(Image.FLIP_LEFT_RIGHT)
+    elif direction.lower() == 'vertical':
+        mirrored_image = image.transpose(Image.FLIP_TOP_BOTTOM)
+    else:
+        raise ValueError("Invalid direction specified. Use 'horizontal' or 'vertical'.")
+
+    output_stream = io.BytesIO()
+    mirrored_image.save(output_stream, format="PNG")
+    output_stream.seek(0)
+    return output_stream
+
+def get_options_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    pixelate_btn = types.InlineKeyboardButton("Pixelate", callback_data="pixelate")
+    ascii_btn = types.InlineKeyboardButton("ASCII Art", callback_data="ascii")
+    mirror_horizontal_btn = types.InlineKeyboardButton("Mirror Horizontally", callback_data="mirror_horizontal")
+    mirror_vertical_btn = types.InlineKeyboardButton("Mirror Vertically", callback_data="mirror_vertical")
+    keyboard.add(pixelate_btn, ascii_btn, mirror_horizontal_btn, mirror_vertical_btn)
+    return keyboard
 
 def resize_image(image, new_width=100):
     width, height = image.size
@@ -68,6 +92,9 @@ def pixelate_image(image, pixel_size):
     )
     return image
 
+def invert_colors(image):
+    return ImageOps.invert(image)
+
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -103,7 +130,11 @@ def callback_query(call):
     elif call.data == "ascii":
         bot.answer_callback_query(call.id, "Converting your image to ASCII art...")
         ascii_and_send(call.message)
-
+    elif call.data.startswith("mirror_"):
+        direction = call.data.split("_")[1]
+        bot.answer_callback_query(call.id, f"Mirroring your image {direction}ly...")
+        mirrored_image_stream = mirror_image(user_states[call.message.chat.id]['photo'], direction)
+        bot.send_photo(call.message.chat.id, mirrored_image_stream)
 
 def pixelate_and_send(message):
     photo_id = user_states[message.chat.id]['photo']
@@ -113,6 +144,7 @@ def pixelate_and_send(message):
     image_stream = io.BytesIO(downloaded_file)
     image = Image.open(image_stream)
     pixelated = pixelate_image(image, 20)
+    inverted_pixelated = invert_colors(pixelated)
 
     output_stream = io.BytesIO()
     pixelated.save(output_stream, format="JPEG")
@@ -128,6 +160,9 @@ def ascii_and_send(message):
     ascii_chars = user_states[message.chat.id].get('character_set', ASCII_CHARS)
     ascii_art = image_to_ascii(image_stream, new_width=len(ascii_chars), ascii_chars=ascii_chars)
     bot.send_message(message.chat.id, ascii_art)
+
+
+bot.polling(none_stop=True)
 
 
 bot.polling(none_stop=True)
