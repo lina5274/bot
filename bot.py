@@ -36,6 +36,26 @@ def get_options_keyboard():
     keyboard.add(pixelate_btn, ascii_btn, mirror_horizontal_btn, mirror_vertical_btn)
     return keyboard
 
+
+def convert_to_heatmap(image):
+    heatmap_image = Image.new("RGB", image.size)
+    grayscale_pixels = image.getdata()
+    color_indices = []
+    for pixel_value in grayscale_pixels:
+        color_index = int(pixel_value * 255 / 255)
+        color_indices.append(color_index)
+
+    heatmap_image.putdata([
+        ImageOps.colorize(
+            Image.new("L", (1, 1), pixel_value),
+            Image.new("L", (1, 1), (0, 0, 255)),
+            Image.new("L", (1, 1), (255, 0, 0))
+        ).resize(image.size).getdata()[0]
+        for pixel_value in color_indices
+    ])
+
+    return heatmap_image
+
 def resize_image(image, new_width=100):
     width, height = image.size
     ratio = height / width
@@ -119,6 +139,8 @@ def get_options_keyboard():
     pixelate_btn = types.InlineKeyboardButton("Pixelate", callback_data="pixelate")
     ascii_btn = types.InlineKeyboardButton("ASCII Art", callback_data="ascii")
     keyboard.add(pixelate_btn, ascii_btn)
+    heatmap_btn = types.InlineKeyboardButton("Heat Map", callback_data="heatmap")  
+    keyboard.add(pixelate_btn, ascii_btn, mirror_horizontal_btn, mirror_vertical_btn, heatmap_btn)
     return keyboard
 
 
@@ -135,6 +157,10 @@ def callback_query(call):
         bot.answer_callback_query(call.id, f"Mirroring your image {direction}ly...")
         mirrored_image_stream = mirror_image(user_states[call.message.chat.id]['photo'], direction)
         bot.send_photo(call.message.chat.id, mirrored_image_stream)
+    elif call.data == "heatmap":
+        bot.answer_callback_query(call.id, "Generating heat map...")
+        heatmap_image_stream = convert_to_heatmap(user_states[call.message.chat.id]['photo'])
+        bot.send_photo(call.message.chat.id, heatmap_image_stream)
 
 def pixelate_and_send(message):
     photo_id = user_states[message.chat.id]['photo']
@@ -160,9 +186,6 @@ def ascii_and_send(message):
     ascii_chars = user_states[message.chat.id].get('character_set', ASCII_CHARS)
     ascii_art = image_to_ascii(image_stream, new_width=len(ascii_chars), ascii_chars=ascii_chars)
     bot.send_message(message.chat.id, ascii_art)
-
-
-bot.polling(none_stop=True)
 
 
 bot.polling(none_stop=True)
