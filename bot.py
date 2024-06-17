@@ -115,6 +115,25 @@ def pixelate_image(image, pixel_size):
 def invert_colors(image):
     return ImageOps.invert(image)
 
+def resize_for_sticker(image_stream, max_size=512):
+
+    image = Image.open(image_stream)
+    original_width, original_height = image.size
+
+    scale_factor = max_size / max(original_width, original_height)
+
+    new_width = int(original_width * scale_factor)
+    new_height = int(original_height * scale_factor)
+
+    new_width = min(new_width, max_size)
+    new_height = min(new_height, max_size)
+
+    resized_image = image.resize((new_width, new_height))
+
+    output_stream = io.BytesIO()
+    resized_image.save(output_stream, format="PNG")
+    output_stream.seek(0)
+
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -161,6 +180,10 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "Generating heat map...")
         heatmap_image_stream = convert_to_heatmap(user_states[call.message.chat.id]['photo'])
         bot.send_photo(call.message.chat.id, heatmap_image_stream)
+    elif call.data == "resize_sticker":
+        bot.answer_callback_query(call.id, "Resizing your image for a sticker...")
+        resized_image_stream = resize_for_sticker(user_states[call.message.chat.id]['photo'], max_size=512)
+        bot.send_photo(call.message.chat.id, resized_image_stream)    
 
 def pixelate_and_send(message):
     photo_id = user_states[message.chat.id]['photo']
