@@ -2,6 +2,15 @@ import telebot
 from PIL import Image, ImageOps
 import io
 from telebot import types
+import random
+
+COMPLIMENTS = [
+    "You're amazing!",
+    "Your smile brightens my day.",
+    "I'm so grateful to have you in my life.",
+    "You're doing great work!",
+    "Your kindness is inspiring."
+]
 
 TOKEN = '<token goes here>'
 bot = telebot.TeleBot(TOKEN)
@@ -11,6 +20,8 @@ user_states = {}  # тут будем хранить информацию о д�
 # набор символов из которых составляем изображение
 ASCII_CHARS = '@%#*+=-:. '
 
+def get_random_compliment():
+    return random.choice(COMPLIMENTS)
 
 def mirror_image(image_stream, direction='horizontal'):
     image = Image.open(image_stream)
@@ -134,11 +145,25 @@ def resize_for_sticker(image_stream, max_size=512):
     resized_image.save(output_stream, format="PNG")
     output_stream.seek(0)
 
+    return output_stream
+
+def flip_coin():
+    return random.choice(['Heads', 'Tails'])
+
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     bot.reply_to(message, "Send me an image, and I'll provide options for you!")
 
+@bot.message_handler(commands=['random_compliment'])
+def send_random_compliment(message):
+    compliment = get_random_compliment()
+    bot.reply_to(message, compliment)
+
+@bot.message_handler(commands=['flip'])
+def send_flip_result(message):
+    result = flip_coin()
+    bot.reply_to(message, result)
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -158,7 +183,7 @@ def get_options_keyboard():
     pixelate_btn = types.InlineKeyboardButton("Pixelate", callback_data="pixelate")
     ascii_btn = types.InlineKeyboardButton("ASCII Art", callback_data="ascii")
     keyboard.add(pixelate_btn, ascii_btn)
-    heatmap_btn = types.InlineKeyboardButton("Heat Map", callback_data="heatmap")  
+    heatmap_btn = types.InlineKeyboardButton("Heat Map", callback_data="heatmap")
     keyboard.add(pixelate_btn, ascii_btn, mirror_horizontal_btn, mirror_vertical_btn, heatmap_btn)
     return keyboard
 
@@ -183,7 +208,7 @@ def callback_query(call):
     elif call.data == "resize_sticker":
         bot.answer_callback_query(call.id, "Resizing your image for a sticker...")
         resized_image_stream = resize_for_sticker(user_states[call.message.chat.id]['photo'], max_size=512)
-        bot.send_photo(call.message.chat.id, resized_image_stream)    
+        bot.send_photo(call.message.chat.id, resized_image_stream)
 
 def pixelate_and_send(message):
     photo_id = user_states[message.chat.id]['photo']
