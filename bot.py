@@ -38,16 +38,6 @@ def mirror_image(image_stream, direction='horizontal'):
     output_stream.seek(0)
     return output_stream
 
-def get_options_keyboard():
-    keyboard = types.InlineKeyboardMarkup()
-    pixelate_btn = types.InlineKeyboardButton("Pixelate", callback_data="pixelate")
-    ascii_btn = types.InlineKeyboardButton("ASCII Art", callback_data="ascii")
-    mirror_horizontal_btn = types.InlineKeyboardButton("Mirror Horizontally", callback_data="mirror_horizontal")
-    mirror_vertical_btn = types.InlineKeyboardButton("Mirror Vertically", callback_data="mirror_vertical")
-    keyboard.add(pixelate_btn, ascii_btn, mirror_horizontal_btn, mirror_vertical_btn)
-    return keyboard
-
-
 def convert_to_heatmap(image):
     heatmap_image = Image.new("RGB", image.size)
     grayscale_pixels = image.getdata()
@@ -172,10 +162,10 @@ def handle_photo(message):
 
     user_states[message.chat.id] = {'photo': message.photo[-1].file_id}
 
-@bot.message_handler(regexp=r'^([@%#*+=-:. ]+)$')
+@bot.callback_query_handler(lambda call: call.data in ['@', '%', '#', '*', '+', '=', '-', ':', '.'])
 def handle_character_set(message):
-    user_states[message.chat.id]['character_set'] = message.text
-    bot.reply_to(message, "Great choice Now, let's convert your image.")
+    user_states[message.chat.id]['character_set'] = call.data
+    bot.answer_callback_query(call.id, "Character set updated.")
 
 def get_character_set_keyboard():
     keyboard = types.InlineKeyboardMarkup()
@@ -192,6 +182,7 @@ def get_options_keyboard():
     ascii_btn = types.InlineKeyboardButton("ASCII Art", callback_data="ascii")
     keyboard.add(pixelate_btn, ascii_btn)
     heatmap_btn = types.InlineKeyboardButton("Heat Map", callback_data="heatmap")
+    resize_sticker_btn = types.InlineKeyboardButton("Resize Sticker", callback_data="resize_sticker")
     keyboard.add(pixelate_btn, ascii_btn, mirror_horizontal_btn, mirror_vertical_btn, heatmap_btn)
     return keyboard
 
@@ -217,6 +208,9 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "Resizing your image for a sticker...")
         resized_image_stream = resize_for_sticker(user_states[call.message.chat.id]['photo'], max_size=512)
         bot.send_photo(call.message.chat.id, resized_image_stream)
+    elif call.data in ['@', '%', '#', '*', '+', '=', '-', ':', '.']:
+        user_states[call.message.chat.id]['character_set'] = call.data
+        bot.answer_callback_query(call.id, "Character set updated.")
 
 def pixelate_and_send(message):
     photo_id = user_states[message.chat.id]['photo']
