@@ -177,6 +177,14 @@ def handle_character_set(message):
     user_states[message.chat.id]['character_set'] = message.text
     bot.reply_to(message, "Great choice Now, let's convert your image.")
 
+def get_character_set_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    character_sets = ['@', '%', '#', '*', '+', '=', '-', ':', '.', ' ']
+    for char_set in character_sets:
+        button = types.InlineKeyboardButton(char_set, callback_data=f"{char_set}")
+        keyboard.row(button)
+    return keyboard
+
 
 def get_options_keyboard():
     keyboard = types.InlineKeyboardMarkup()
