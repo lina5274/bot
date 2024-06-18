@@ -1,142 +1,247 @@
-import tkinter as tk
-from tkinter import colorchooser
-from tkinter.simpledialog import askstring, askinteger
-from tkinter.filedialog import asksaveasfilename
-from PIL import Image, ImageDraw
+import telebot
+from PIL import Image, ImageOps
+import io
+from telebot import types
+import random
 
-class DrawingApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Рисовалка с сохранением в PNG")
+COMPLIMENTS = [
+    "You're amazing!",
+    "Your smile brightens my day.",
+    "I'm so grateful to have you in my life.",
+    "You're doing great work!",
+    "Your kindness is inspiring."
+]
 
-        self.image = Image.new("RGB", (600, 400), "white")
-        self.draw = ImageDraw.Draw(self.image)
+TOKEN = '<token goes here>'
+bot = telebot.TeleBot(TOKEN)
 
-        self.canvas = tk.Canvas(root, width=600, height=400, bg='white')
-        self.canvas.pack()
+user_states = {}  # тут будем хранить информацию о действиях пользователя
 
-        self.last_x, self.last_y = None, None
-        self.pen_color = 'black'
-        self.eraser_color = 'white'
-        self.brush_size = 1
+# набор символов из которых составляем изображение
+ASCII_CHARS = '@%#*+=-:. '
 
-        self.setup_ui()
+def get_random_compliment():
+    return random.choice(COMPLIMENTS)
 
-        self.canvas.bind('<Button-3>', lambda event: self.pick_color(event))
+def mirror_image(image_stream, direction='horizontal'):
+    image = Image.open(image_stream)
 
-        self.canvas.bind('<B1-Motion>', self.paint)
-        self.canvas.bind('<ButtonRelease-1>', self.reset)
+    if direction.lower() == 'horizontal':
+        mirrored_image = image.transpose(Image.FLIP_LEFT_RIGHT)
+    elif direction.lower() == 'vertical':
+        mirrored_image = image.transpose(Image.FLIP_TOP_BOTTOM)
+    else:
+        raise ValueError("Invalid direction specified. Use 'horizontal' or 'vertical'.")
 
-        self.root.bind('<Control-s>', lambda event: self.save_image())
-        self.root.bind('<Control-c>', lambda event: self.choose_color())
+    output_stream = io.BytesIO()
+    mirrored_image.save(output_stream, format="PNG")
+    output_stream.seek(0)
+    return output_stream
 
-        resize_button = tk.Button(self.root, text="Изменить размер холста", command=self.resize_canvas)
-        resize_button.pack(side=tk.BOTTOM)
+def get_options_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    pixelate_btn = types.InlineKeyboardButton("Pixelate", callback_data="pixelate")
+    ascii_btn = types.InlineKeyboardButton("ASCII Art", callback_data="ascii")
+    mirror_horizontal_btn = types.InlineKeyboardButton("Mirror Horizontally", callback_data="mirror_horizontal")
+    mirror_vertical_btn = types.InlineKeyboardButton("Mirror Vertically", callback_data="mirror_vertical")
+    keyboard.add(pixelate_btn, ascii_btn, mirror_horizontal_btn, mirror_vertical_btn)
+    return keyboard
 
-    def setup_ui(self):
-        control_frame = tk.Frame(self.root)
-        control_frame.pack(fill=tk.X)
 
-        clear_button = tk.Button(control_frame, text="Очистить", command=self.clear_canvas)
-        clear_button.pack(side=tk.LEFT)
+def convert_to_heatmap(image):
+    heatmap_image = Image.new("RGB", image.size)
+    grayscale_pixels = image.getdata()
+    color_indices = []
+    for pixel_value in grayscale_pixels:
+        color_index = int(pixel_value * 255 / 255)
+        color_indices.append(color_index)
 
-        color_button = tk.Button(control_frame, text="Выбрать цвет", command=self.choose_color)
-        color_button.pack(side=tk.LEFT)
+    heatmap_image.putdata([
+        ImageOps.colorize(
+            Image.new("L", (1, 1), pixel_value),
+            Image.new("L", (1, 1), (0, 0, 255)),
+            Image.new("L", (1, 1), (255, 0, 0))
+        ).resize(image.size).getdata()[0]
+        for pixel_value in color_indices
+    ])
 
-        eraser_button = tk.Button(control_frame, text="Ластик", command=self.choose_eraser_color)
-        eraser_button.pack(side=tk.LEFT)
+    return heatmap_image
 
-        save_button = tk.Button(control_frame, text="Сохранить", command=self.save_image)
-        save_button.pack(side=tk.LEFT)
+def resize_image(image, new_width=100):
+    width, height = image.size
+    ratio = height / width
+    new_height = int(new_width * ratio)
+    return image.resize((new_width, new_height))
 
-        self.brush_size_var = tk.StringVar()
-        self.brush_size_var.set('1')
-        sizes = ['1', '2', '5', '10']
-        self.brush_size_menu = tk.OptionMenu(control_frame, self.brush_size_var, *sizes, command=self.update_brush_size)
-        self.brush_size_menu.config(width=len(max(sizes, key=len)))
-        self.brush_size_menu.pack(side=tk.LEFT)
 
-        self.color_display_label = tk.Label(control_frame, bg=self.pen_color)
-        self.color_display_label.pack(side=tk.LEFT)
+def grayify(image):
+    return image.convert("L")
 
-    def add_text(self):
-        text = askstring(title="Добавление текста", prompt="Введите текст:")
-        if text:
-            x, y = map(int, askinteger(title="Позиция текста", prompt="Введите X и Y позицию:").split(','))
-            self.draw.text((x, y), text, fill=self.pen_color)
-            self.image.show()
 
-    def change_background(self):
-        new_color = colorchooser.askcolor()[1]
-        if new_color:
-            self.canvas.config(background=new_color)
-            self.image = Image.new("RGB", (600, 400), new_color)
-            self.draw = ImageDraw.Draw(self.image)
-            self.canvas.delete('all')
+def image_to_ascii(image_stream, new_width=40, ascii_chars=ASCII_CHARS):
+    # Переводим в оттенки серого
+    image = Image.open(image_stream).convert('L')
 
-    def resize_canvas(self):
-        new_width = askinteger(title="Изменение размера холста", prompt="Введите новую ширину:")
-        new_height = askinteger(title="Изменение размера холста", prompt="Введите новую высоту:")
+    # меняем размер сохраняя отношение сторон
+    width, height = image.size
+    aspect_ratio = height / float(width)
+    new_height = int(
+        aspect_ratio * new_width * 0.55)  # 0,55 так как буквы выше чем шире
+    img_resized = image.resize((new_width, new_height))
 
-        if new_width and new_height:
-            self.image = self.image.resize((new_width, new_height), Image.ANTIALIAS)
-            self.draw = ImageDraw.Draw(self.image)
-            self.canvas.config(width=new_width, height=new_height)
-            self.canvas.delete('all')
+    img_str = pixels_to_ascii(img_resized)
+    img_width = img_resized.width
 
-    def choose_eraser_color(self):
-        self.eraser_color = colorchooser.askcolor()[1] or self.eraser_color  # Use current color if no selection was made
-        self.pen_color = self.eraser_color
-        self.update_color_display()
+    max_characters = 4000 - (new_width + 1)
+    max_rows = max_characters // (new_width + 1)
 
-    def update_brush_size(self, size):
-        self.brush_size = int(size)
-        print(f"New brush size: {self.brush_size}")
+    ascii_art = ""
+    for i in range(0, min(max_rows * img_width, len(img_str)), img_width):
+        ascii_art += img_str[i:i + img_width] + "\n"
 
-    def paint(self, event):
-        if self.last_x and self.last_y:
-            self.canvas.create_line(self.last_x, self.last_y, event.x, event.y,
-                                    width=self.brush_size, fill=self.pen_color,
-                                    capstyle=tk.ROUND, smooth=tk.TRUE)
-            self.draw.line([self.last_x, self.last_y, event.x, event.y], fill=self.pen_color,
-                           width=self.brush_size)
-            self.image = self.image.copy()  # Обновляем изображение после рисования
-            self.draw = ImageDraw.Draw(self.image)  # Создаем новый объект Draw для текущего состояния изображения
+    return ascii_art
 
-        self.last_x = event.x
-        self.last_y = event.y
 
-    def reset(self, event):
-        self.last_x, self.last_y = None, None
+def pixels_to_ascii(image, ascii_chars=ASCII_CHARS):
+    pixels = image.getdata()
+    characters = ""
+    for pixel in pixels:
+        index = pixel * len(ascii_chars) // 256
+        characters += ascii_chars[index]
+    return characters
 
-    def clear_canvas(self):
-        self.image = Image.new("RGB", (600, 400), "white")
-        self.draw = ImageDraw.Draw(self.image)
-        self.canvas.delete('all')
 
-    def save_image(self):
-        filename = asksaveasfilename(defaultextension=".png")
-        if filename:
-            self.image.save(filename)
+# Огрубляем изображение
+def pixelate_image(image, pixel_size):
+    image = image.resize(
+        (image.size[0] // pixel_size, image.size[1] // pixel_size),
+        Image.NEAREST
+    )
+    image = image.resize(
+        (image.size[0] * pixel_size, image.size[1] * pixel_size),
+        Image.NEAREST
+    )
+    return image
 
-    def choose_color(self):
-        new_color = colorchooser.askcolor()[1]
-        if new_color:
-            self.pen_color = new_color
-            self.update_color_display()
-            self.image = self.image.copy()  # Обновляем изображение после изменения цвета
-            self.draw = ImageDraw.Draw(self.image)  # Создаем новый объект Draw для текущего состояния изображения
+def invert_colors(image):
+    return ImageOps.invert(image)
 
-    def update_color_display(self):
-        self.color_display_label.configure(bg=self.pen_color)
+def resize_for_sticker(image_stream, max_size=512):
 
-    def pick_color(self, event):
-        x, y = event.x, event.y
-        pixel_color = self.image.getpixel((x, y))
-        self.pen_color = pixel_color
-        print(f"Selected color: {pixel_color}")
+    image = Image.open(image_stream)
+    original_width, original_height = image.size
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = DrawingApp(root)
-    root.mainloop()
+    scale_factor = max_size / max(original_width, original_height)
+
+    new_width = int(original_width * scale_factor)
+    new_height = int(original_height * scale_factor)
+
+    new_width = min(new_width, max_size)
+    new_height = min(new_height, max_size)
+
+    resized_image = image.resize((new_width, new_height))
+
+    output_stream = io.BytesIO()
+    resized_image.save(output_stream, format="PNG")
+    output_stream.seek(0)
+
+    return output_stream
+
+def flip_coin():
+    return random.choice(['Heads', 'Tails'])
+
+
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    bot.reply_to(message, "Send me an image, and I'll provide options for you!")
+
+@bot.message_handler(commands=['random_compliment'])
+def send_random_compliment(message):
+    compliment = get_random_compliment()
+    bot.reply_to(message, compliment)
+
+@bot.message_handler(commands=['flip'])
+def send_flip_result(message):
+    result = flip_coin()
+    bot.reply_to(message, result)
+
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    bot.reply_to(message, "Choose your character set for ASCII art:",
+                 reply_markup=get_character_set_keyboard())
+
+    user_states[message.chat.id] = {'photo': message.photo[-1].file_id}
+
+@bot.message_handler(regexp=r'^([@%#*+=-:. ]+)$')
+def handle_character_set(message):
+    user_states[message.chat.id]['character_set'] = message.text
+    bot.reply_to(message, "Great choice Now, let's convert your image.")
+
+def get_character_set_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    character_sets = ['@', '%', '#', '*', '+', '=', '-', ':', '.', ' ']
+    for char_set in character_sets:
+        button = types.InlineKeyboardButton(char_set, callback_data=f"{char_set}")
+        keyboard.row(button)
+    return keyboard
+
+
+def get_options_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    pixelate_btn = types.InlineKeyboardButton("Pixelate", callback_data="pixelate")
+    ascii_btn = types.InlineKeyboardButton("ASCII Art", callback_data="ascii")
+    keyboard.add(pixelate_btn, ascii_btn)
+    heatmap_btn = types.InlineKeyboardButton("Heat Map", callback_data="heatmap")
+    keyboard.add(pixelate_btn, ascii_btn, mirror_horizontal_btn, mirror_vertical_btn, heatmap_btn)
+    return keyboard
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == "pixelate":
+        bot.answer_callback_query(call.id, "Pixelating your image...")
+        pixelate_and_send(call.message)
+    elif call.data == "ascii":
+        bot.answer_callback_query(call.id, "Converting your image to ASCII art...")
+        ascii_and_send(call.message)
+    elif call.data.startswith("mirror_"):
+        direction = call.data.split("_")[1]
+        bot.answer_callback_query(call.id, f"Mirroring your image {direction}ly...")
+        mirrored_image_stream = mirror_image(user_states[call.message.chat.id]['photo'], direction)
+        bot.send_photo(call.message.chat.id, mirrored_image_stream)
+    elif call.data == "heatmap":
+        bot.answer_callback_query(call.id, "Generating heat map...")
+        heatmap_image_stream = convert_to_heatmap(user_states[call.message.chat.id]['photo'])
+        bot.send_photo(call.message.chat.id, heatmap_image_stream)
+    elif call.data == "resize_sticker":
+        bot.answer_callback_query(call.id, "Resizing your image for a sticker...")
+        resized_image_stream = resize_for_sticker(user_states[call.message.chat.id]['photo'], max_size=512)
+        bot.send_photo(call.message.chat.id, resized_image_stream)
+
+def pixelate_and_send(message):
+    photo_id = user_states[message.chat.id]['photo']
+    file_info = bot.get_file(photo_id)
+    downloaded_file = bot.download_file(file_info.file_path)
+
+    image_stream = io.BytesIO(downloaded_file)
+    image = Image.open(image_stream)
+    pixelated = pixelate_image(image, 20)
+    inverted_pixelated = invert_colors(pixelated)
+
+    output_stream = io.BytesIO()
+    pixelated.save(output_stream, format="JPEG")
+    output_stream.seek(0)
+    bot.send_photo(message.chat.id, output_stream)
+
+
+def ascii_and_send(message):
+    photo_id = user_states[message.chat.id]['photo']
+    file_info = bot.get_file(photo_id)
+    downloaded_file = bot.download_file(file_info.file_path)
+    image_stream = io.BytesIO(downloaded_file)
+    ascii_chars = user_states[message.chat.id].get('character_set', ASCII_CHARS)
+    ascii_art = image_to_ascii(image_stream, new_width=len(ascii_chars), ascii_chars=ascii_chars)
+    bot.send_message(message.chat.id, ascii_art)
+
+
+bot.polling(none_stop=True)
