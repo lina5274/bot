@@ -13,7 +13,7 @@ COMPLIMENTS = [
 ]
 
 TOKEN = '<token goes here>'
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(('7235559625:AAF0vJ5RUFZJBocFE2QGpk-8EJH10jW-4-Q'))
 
 user_states = {}  # тут будем хранить информацию о действиях пользователя
 
