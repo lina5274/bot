@@ -12,8 +12,8 @@ COMPLIMENTS = [
     "Your kindness is inspiring."
 ]
 
-TOKEN = '<token goes here>'
-bot = telebot.TeleBot(('7235559625:AAF0vJ5RUFZJBocFE2QGpk-8EJH10jW-4-Q'))
+TOKEN = '7235559625:AAF0vJ5RUFZJBocFE2QGpk-8EJH10jW-4-Q'
+bot = telebot.TeleBot('7235559625:AAF0vJ5RUFZJBocFE2QGpk-8EJH10jW-4-Q')
 
 user_states = {}  # тут будем хранить информацию о действиях пользователя
 
@@ -163,7 +163,7 @@ def handle_photo(message):
     user_states[message.chat.id] = {'photo': message.photo[-1].file_id}
 
 @bot.callback_query_handler(lambda call: call.data in ['@', '%', '#', '*', '+', '=', '-', ':', '.'])
-def handle_character_set(message):
+def handle_character_set(call):
     user_states[message.chat.id]['character_set'] = call.data
     bot.answer_callback_query(call.id, "Character set updated.")
 
